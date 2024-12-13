@@ -1,1 +1,0 @@
-# Every file in this folder implements a different poison recipe.
