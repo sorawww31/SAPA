@@ -1,143 +1,227 @@
 """Super-classes of common datasets to extract id information per image."""
-import torch
-import torchvision
 
-import numpy as np#add svhn
-
-from ..consts import *   # import all mean/std constants
-
-import torchvision.transforms as transforms
-from PIL import Image
-import os
 import glob
-
-from torchvision.datasets.imagenet import load_meta_file
-from torchvision.datasets.utils import verify_str_arg
+import os
 
 # Block ImageNet corrupt EXIF warnings
 import warnings
+
+import numpy as np  # add svhn
+import torch
+import torchvision
+import torchvision.transforms as transforms
+from PIL import Image
+from torchvision.datasets.imagenet import load_meta_file
+from torchvision.datasets.utils import verify_str_arg
+
+from ..consts import *  # import all mean/std constants
+
 warnings.filterwarnings("ignore", "(Possibly )?corrupt EXIF data", UserWarning)
 
 
 def construct_datasets(dataset, data_path, normalize=True):
     """Construct datasets with appropriate transforms."""
     # Compute mean, std:
-    if dataset == 'CIFAR100':
-        trainset = CIFAR100(root=data_path, train=True, download=True, transform=transforms.ToTensor())
+    if dataset == "CIFAR100":
+        trainset = CIFAR100(
+            root=data_path, train=True, download=True, transform=transforms.ToTensor()
+        )
         if cifar100_mean is None:
-            cc = torch.cat([trainset[i][0].reshape(3, -1) for i in range(len(trainset))], dim=1)
+            cc = torch.cat(
+                [trainset[i][0].reshape(3, -1) for i in range(len(trainset))], dim=1
+            )
             data_mean = torch.mean(cc, dim=1).tolist()
             data_std = torch.std(cc, dim=1).tolist()
         else:
             data_mean, data_std = cifar100_mean, cifar100_std
-    elif dataset == 'CIFAR10':
-        trainset = CIFAR10(root=data_path, train=True, download=True, transform=transforms.ToTensor())
+    elif dataset == "CIFAR10":
+        trainset = CIFAR10(
+            root=data_path, train=True, download=True, transform=transforms.ToTensor()
+        )
         if cifar10_mean is None:
-            cc = torch.cat([trainset[i][0].reshape(3, -1) for i in range(len(trainset))], dim=1)
+            cc = torch.cat(
+                [trainset[i][0].reshape(3, -1) for i in range(len(trainset))], dim=1
+            )
             data_mean = torch.mean(cc, dim=1).tolist()
             data_std = torch.std(cc, dim=1).tolist()
         else:
             data_mean, data_std = cifar10_mean, cifar10_std
-    #add svhn
-    elif dataset == 'SVHN':
-        trainset = SVHN(root=data_path, split='train', download=True, transform=transforms.ToTensor())
+    # add svhn
+    elif dataset == "SVHN":
+        trainset = SVHN(
+            root=data_path,
+            split="train",
+            download=True,
+            transform=transforms.ToTensor(),
+        )
         if svhn_mean is None:
-            cc = torch.cat([trainset[i][0].reshape(3, -1) for i in range(len(trainset))], dim=1)
+            cc = torch.cat(
+                [trainset[i][0].reshape(3, -1) for i in range(len(trainset))], dim=1
+            )
             data_mean = torch.mean(cc, dim=1).tolist()
             data_std = torch.std(cc, dim=1).tolist()
         else:
             data_mean, data_std = svhn_mean, svhn_std
-    elif dataset == 'MNIST':
-        trainset = MNIST(root=data_path, train=True, download=True, transform=transforms.ToTensor())
+    elif dataset == "MNIST":
+        trainset = MNIST(
+            root=data_path, train=True, download=True, transform=transforms.ToTensor()
+        )
         if mnist_mean is None:
-            cc = torch.cat([trainset[i][0].reshape(-1) for i in range(len(trainset))], dim=0)
+            cc = torch.cat(
+                [trainset[i][0].reshape(-1) for i in range(len(trainset))], dim=0
+            )
             data_mean = (torch.mean(cc, dim=0).item(),)
             data_std = (torch.std(cc, dim=0).item(),)
         else:
             data_mean, data_std = mnist_mean, mnist_std
-    elif dataset == 'ImageNet':
-        trainset = ImageNet(root=data_path, split='train', download=False, transform=transforms.ToTensor())
+    elif dataset == "ImageNet":
+        trainset = ImageNet(
+            root=data_path,
+            split="train",
+            download=False,
+            transform=transforms.ToTensor(),
+        )
         if imagenet_mean is None:
-            cc = torch.cat([trainset[i][0].reshape(3, -1) for i in range(len(trainset))], dim=1)
+            cc = torch.cat(
+                [trainset[i][0].reshape(3, -1) for i in range(len(trainset))], dim=1
+            )
             data_mean = torch.mean(cc, dim=1).tolist()
             data_std = torch.std(cc, dim=1).tolist()
         else:
             data_mean, data_std = imagenet_mean, imagenet_std
-    elif dataset == 'ImageNet1k':
-        trainset = ImageNet1k(root=data_path, split='train', download=False, transform=transforms.ToTensor())
+    elif dataset == "ImageNet1k":
+        trainset = ImageNet1k(
+            root=data_path,
+            split="train",
+            download=False,
+            transform=transforms.ToTensor(),
+        )
         if imagenet_mean is None:
-            cc = torch.cat([trainset[i][0].reshape(3, -1) for i in range(len(trainset))], dim=1)
+            cc = torch.cat(
+                [trainset[i][0].reshape(3, -1) for i in range(len(trainset))], dim=1
+            )
             data_mean = torch.mean(cc, dim=1).tolist()
             data_std = torch.std(cc, dim=1).tolist()
         else:
             data_mean, data_std = imagenet_mean, imagenet_std
-    elif dataset == 'TinyImageNet':
-        trainset = TinyImageNet(root=data_path, split='train', transform=transforms.ToTensor())
+    elif dataset == "TinyImageNet":
+        trainset = TinyImageNet(
+            root=data_path, split="train", transform=transforms.ToTensor()
+        )
         if tiny_imagenet_mean is None:
-            cc = torch.cat([trainset[i][0].reshape(3, -1) for i in range(len(trainset))], dim=1)
+            cc = torch.cat(
+                [trainset[i][0].reshape(3, -1) for i in range(len(trainset))], dim=1
+            )
             data_mean = torch.mean(cc, dim=1).tolist()
             data_std = torch.std(cc, dim=1).tolist()
         else:
             data_mean, data_std = tiny_imagenet_mean, tiny_imagenet_std
     else:
-        raise ValueError(f'Invalid dataset {dataset} given.')
+        raise ValueError(f"Invalid dataset {dataset} given.")
 
     if normalize:
-        print(f'Data mean is {data_mean}, \nData std  is {data_std}.')
+        print(f"Data mean is {data_mean}, \nData std  is {data_std}.")
         trainset.data_mean = data_mean
         trainset.data_std = data_std
     else:
-        print('Normalization disabled.')
+        print("Normalization disabled.")
         trainset.data_mean = (0.0, 0.0, 0.0)
         trainset.data_std = (1.0, 1.0, 1.0)
 
     # Setup data
-    if dataset in ['ImageNet', 'ImageNet1k']:
-        transform_train = transforms.Compose([
-            transforms.Resize(256),
-            transforms.CenterCrop(224),
-            transforms.ToTensor(),
-            transforms.Normalize(data_mean, data_std) if normalize else transforms.Lambda(lambda x: x)])
+    if dataset in ["ImageNet", "ImageNet1k"]:
+        transform_train = transforms.Compose(
+            [
+                transforms.Resize(256),
+                transforms.CenterCrop(224),
+                transforms.ToTensor(),
+                (
+                    transforms.Normalize(data_mean, data_std)
+                    if normalize
+                    else transforms.Lambda(lambda x: x)
+                ),
+            ]
+        )
     else:
-        transform_train = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize(data_mean, data_std) if normalize else transforms.Lambda(lambda x: x)])
+        transform_train = transforms.Compose(
+            [
+                transforms.ToTensor(),
+                (
+                    transforms.Normalize(data_mean, data_std)
+                    if normalize
+                    else transforms.Lambda(lambda x: x)
+                ),
+            ]
+        )
 
     trainset.transform = transform_train
 
-    transform_valid = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize(data_mean, data_std) if normalize else transforms.Lambda(lambda x : x)])
+    transform_valid = transforms.Compose(
+        [
+            transforms.ToTensor(),
+            (
+                transforms.Normalize(data_mean, data_std)
+                if normalize
+                else transforms.Lambda(lambda x: x)
+            ),
+        ]
+    )
 
-    if dataset == 'CIFAR100':
-        validset = CIFAR100(root=data_path, train=False, download=True, transform=transform_valid)
-    elif dataset == 'CIFAR10':
-        validset = CIFAR10(root=data_path, train=False, download=True, transform=transform_valid)
-    elif dataset == 'MNIST':
-        validset = MNIST(root=data_path, train=False, download=True, transform=transform_valid)
-    #add svhn
-    elif dataset == 'SVHN':
-        validset = SVHN(root=data_path, split='test', download=True, transform=transform_valid)
-    elif dataset == 'TinyImageNet':
-        validset = TinyImageNet(root=data_path, split='val', transform=transform_valid)
-    elif dataset == 'ImageNet':
+    if dataset == "CIFAR100":
+        validset = CIFAR100(
+            root=data_path, train=False, download=True, transform=transform_valid
+        )
+    elif dataset == "CIFAR10":
+        validset = CIFAR10(
+            root=data_path, train=False, download=True, transform=transform_valid
+        )
+    elif dataset == "MNIST":
+        validset = MNIST(
+            root=data_path, train=False, download=True, transform=transform_valid
+        )
+    # add svhn
+    elif dataset == "SVHN":
+        validset = SVHN(
+            root=data_path, split="test", download=True, transform=transform_valid
+        )
+    elif dataset == "TinyImageNet":
+        validset = TinyImageNet(root=data_path, split="val", transform=transform_valid)
+    elif dataset == "ImageNet":
         # Prepare ImageNet beforehand in a different script!
         # We are not going to redownload on every instance
-        transform_valid = transforms.Compose([
-            transforms.Resize(256),
-            transforms.CenterCrop(224),
-            transforms.ToTensor(),
-            transforms.Normalize(data_mean, data_std) if normalize else transforms.Lambda(lambda x : x)])
-        validset = ImageNet(root=data_path, split='val', download=False, transform=transform_valid)
-    elif dataset == 'ImageNet1k':
+        transform_valid = transforms.Compose(
+            [
+                transforms.Resize(256),
+                transforms.CenterCrop(224),
+                transforms.ToTensor(),
+                (
+                    transforms.Normalize(data_mean, data_std)
+                    if normalize
+                    else transforms.Lambda(lambda x: x)
+                ),
+            ]
+        )
+        validset = ImageNet(
+            root=data_path, split="val", download=False, transform=transform_valid
+        )
+    elif dataset == "ImageNet1k":
         # Prepare ImageNet beforehand in a different script!
         # We are not going to redownload on every instance
-        transform_valid = transforms.Compose([
-            transforms.Resize(256),
-            transforms.CenterCrop(224),
-            transforms.ToTensor(),
-            transforms.Normalize(data_mean, data_std) if normalize else transforms.Lambda(lambda x : x)])
-        validset = ImageNet1k(root=data_path, split='val', download=False, transform=transform_valid)
+        transform_valid = transforms.Compose(
+            [
+                transforms.Resize(256),
+                transforms.CenterCrop(224),
+                transforms.ToTensor(),
+                (
+                    transforms.Normalize(data_mean, data_std)
+                    if normalize
+                    else transforms.Lambda(lambda x: x)
+                ),
+            ]
+        )
+        validset = ImageNet1k(
+            root=data_path, split="val", download=False, transform=transform_valid
+        )
 
     if normalize:
         validset.data_mean = data_mean
@@ -214,7 +298,8 @@ class CIFAR10(torchvision.datasets.CIFAR10):
 
         return target, index
 
-#add svhn dataset
+
+# add svhn dataset
 class SVHN(torchvision.datasets.SVHN):
     """Super-class SVHN to return image ids with images."""
 
@@ -241,7 +326,7 @@ class SVHN(torchvision.datasets.SVHN):
             target = self.target_transform(target)
 
         return img, target, index
-    
+
     def get_target(self, index):
         """Return only the target and its id.
 
@@ -258,6 +343,7 @@ class SVHN(torchvision.datasets.SVHN):
             target = self.target_transform(target)
 
         return target, index
+
 
 class CIFAR100(torchvision.datasets.CIFAR100):
     """Super-class CIFAR100 to return image ids with images."""
@@ -321,7 +407,7 @@ class MNIST(torchvision.datasets.MNIST):
 
         # doing this so that it is consistent with all other datasets
         # to return a PIL Image
-        img = Image.fromarray(img.numpy(), mode='L')
+        img = Image.fromarray(img.numpy(), mode="L")
 
         if self.transform is not None:
             img = self.transform(img)
@@ -352,7 +438,7 @@ class MNIST(torchvision.datasets.MNIST):
 class ImageNet(torchvision.datasets.ImageNet):
     """Overwrite torchvision ImageNet to change metafile location if metafile cannot be written due to some reason."""
 
-    def __init__(self, root, split='train', download=False, **kwargs):
+    def __init__(self, root, split="train", download=False, **kwargs):
         """Use as torchvision.datasets.ImageNet."""
         root = self.root = os.path.expanduser(root)
         self.split = verify_str_arg(split, "split", ("train", "val"))
@@ -360,7 +446,9 @@ class ImageNet(torchvision.datasets.ImageNet):
         try:
             wnid_to_classes = load_meta_file(self.root)[0]
         except RuntimeError:
-            torchvision.datasets.imagenet.META_FILE = os.path.join(os.path.expanduser('~/data/'), 'meta.bin')
+            torchvision.datasets.imagenet.META_FILE = os.path.join(
+                os.path.expanduser("~/data/"), "meta.bin"
+            )
             try:
                 wnid_to_classes = load_meta_file(self.root)[0]
             except RuntimeError:
@@ -373,9 +461,9 @@ class ImageNet(torchvision.datasets.ImageNet):
         self.wnids = self.classes
         self.wnid_to_idx = self.class_to_idx
         self.classes = [wnid_to_classes[wnid] for wnid in self.wnids]
-        self.class_to_idx = {cls: idx
-                             for idx, clss in enumerate(self.classes)
-                             for cls in clss}
+        self.class_to_idx = {
+            cls: idx for idx, clss in enumerate(self.classes) for cls in clss
+        }
         """Scrub class names to be a single string."""
         scrubbed_names = []
         for name in self.classes:
@@ -421,14 +509,13 @@ class ImageNet(torchvision.datasets.ImageNet):
         return target, index
 
 
-
 class ImageNet1k(ImageNet):
     """Overwrite torchvision ImageNet to limit it to less than 1mio examples.
 
     [limit/per class, due to automl restrictions].
     """
 
-    def __init__(self, root, split='train', download=False, limit=950, **kwargs):
+    def __init__(self, root, split="train", download=False, limit=950, **kwargs):
         """As torchvision.datasets.ImageNet except for additional keyword 'limit'."""
         super().__init__(root, split, download, **kwargs)
 
@@ -448,9 +535,7 @@ class ImageNet1k(ImageNet):
             else:
                 pass
         self.samples = new_samples
-        print(f'Size of {self.split} dataset reduced to {len(self.samples)}.')
-
-
+        print(f"Size of {self.split} dataset reduced to {len(self.samples)}.")
 
 
 """
@@ -480,13 +565,13 @@ class TinyImageNet(torch.utils.data.Dataset):
         Set to True if there is enough memory (about 5G) and want to minimize disk IO overhead.
     """
 
-    EXTENSION = 'JPEG'
+    EXTENSION = "JPEG"
     NUM_IMAGES_PER_CLASS = 500
-    CLASS_LIST_FILE = 'wnids.txt'
-    VAL_ANNOTATION_FILE = 'val_annotations.txt'
-    CLASSES = 'words.txt'
+    CLASS_LIST_FILE = "wnids.txt"
+    VAL_ANNOTATION_FILE = "val_annotations.txt"
+    CLASSES = "words.txt"
 
-    def __init__(self, root, split='train', transform=None, target_transform=None):
+    def __init__(self, root, split="train", transform=None, target_transform=None):
         """Init with split, transform, target_transform. use --cached_dataset data is to be kept in memory."""
         self.root = os.path.expanduser(root)
         self.split = split
@@ -494,35 +579,44 @@ class TinyImageNet(torch.utils.data.Dataset):
         self.target_transform = target_transform
 
         self.split_dir = os.path.join(root, self.split)
-        self.image_paths = sorted(glob.iglob(os.path.join(self.split_dir, '**', '*.%s' % self.EXTENSION), recursive=True))
+        self.image_paths = sorted(
+            glob.iglob(
+                os.path.join(self.split_dir, "**", "*.%s" % self.EXTENSION),
+                recursive=True,
+            )
+        )
         self.labels = {}  # fname - label number mapping
 
         # build class label - number mapping
-        with open(os.path.join(self.root, self.CLASS_LIST_FILE), 'r') as fp:
+        with open(os.path.join(self.root, self.CLASS_LIST_FILE), "r") as fp:
             self.label_texts = sorted([text.strip() for text in fp.readlines()])
         self.label_text_to_number = {text: i for i, text in enumerate(self.label_texts)}
 
-        if self.split == 'train':
+        if self.split == "train":
             for label_text, i in self.label_text_to_number.items():
                 for cnt in range(self.NUM_IMAGES_PER_CLASS):
-                    self.labels['%s_%d.%s' % (label_text, cnt, self.EXTENSION)] = i
-        elif self.split == 'val':
-            with open(os.path.join(self.split_dir, self.VAL_ANNOTATION_FILE), 'r') as fp:
+                    self.labels["%s_%d.%s" % (label_text, cnt, self.EXTENSION)] = i
+        elif self.split == "val":
+            with open(
+                os.path.join(self.split_dir, self.VAL_ANNOTATION_FILE), "r"
+            ) as fp:
                 for line in fp.readlines():
-                    terms = line.split('\t')
+                    terms = line.split("\t")
                     file_name, label_text = terms[0], terms[1]
                     self.labels[file_name] = self.label_text_to_number[label_text]
 
         # Build class names
         label_text_to_word = dict()
-        with open(os.path.join(root, self.CLASSES), 'r') as file:
+        with open(os.path.join(root, self.CLASSES), "r") as file:
             for line in file:
-                label_text, word = line.split('\t')
-                label_text_to_word[label_text] = word.split(',')[0].rstrip('\n')
+                label_text, word = line.split("\t")
+                label_text_to_word[label_text] = word.split(",")[0].rstrip("\n")
         self.classes = [label_text_to_word[label] for label in self.label_texts]
 
         # Prepare index - label mapping
-        self.targets = [self.labels[os.path.basename(file_path)] for file_path in self.image_paths]
+        self.targets = [
+            self.labels[os.path.basename(file_path)] for file_path in self.image_paths
+        ]
 
     def __len__(self):
         """Return length via image paths."""
@@ -537,11 +631,10 @@ class TinyImageNet(torch.utils.data.Dataset):
         img = Image.open(file_path)
         img = img.convert("RGB")
         img = self.transform(img) if self.transform else img
-        if self.split == 'test':
+        if self.split == "test":
             return img, None, index
         else:
             return img, target, index
-
 
     def get_target(self, index):
         """Return only the target and its id."""
