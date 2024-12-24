@@ -2,11 +2,12 @@
 
 import torch
 
-from .models import get_model
-from .training import get_optimizers, run_step
+from ..consts import BENCHMARK, SHARING_STRATEGY
 from ..hyperparameters import training_strategy
 from ..utils import average_dicts
-from ..consts import BENCHMARK, SHARING_STRATEGY
+from .models import get_model
+from .training import get_optimizers, run_step
+
 torch.backends.cudnn.benchmark = BENCHMARK
 torch.multiprocessing.set_sharing_strategy(SHARING_STRATEGY)
 
@@ -41,14 +42,18 @@ class _VictimBase:
 
     """
 
-    def __init__(self, args, setup=dict(device=torch.device('cpu'), dtype=torch.float)):
+    def __init__(self, args, setup=dict(device=torch.device("cpu"), dtype=torch.float)):
         """Initialize empty victim."""
         self.args, self.setup = args, setup
         if self.args.ensemble < len(self.args.net):
-            raise ValueError(f'More models requested than ensemble size.'
-                             f'Increase ensemble size or reduce models.')
+            raise ValueError(
+                f"More models requested than ensemble size."
+                f"Increase ensemble size or reduce models."
+            )
         self.loss_fn = torch.nn.CrossEntropyLoss()
-        self.initialize(pretrain=True if self.args.pretrain_dataset is not None else False)
+        self.initialize(
+            pretrain=True if self.args.pretrain_dataset is not None else False
+        )
 
     def gradient(self, images, labels):
         """Compute the gradient of criterion(model) w.r.t to given data."""
@@ -92,49 +97,68 @@ class _VictimBase:
     def load_feature_representation(self):
         raise NotImplementedError()
 
-
     """ METHODS FOR (CLEAN) TRAINING AND TESTING OF BREWED POISONS"""
 
     def train(self, kettle, max_epoch=None):
         """Clean (pre)-training of the chosen model, no poisoning involved."""
-        print('Starting clean training ...')
-        stats_clean = self._iterate(kettle, poison_delta=None, max_epoch=max_epoch,
-                                    pretraining_phase=True if self.args.pretrain_dataset is not None else False)
+        print("Starting clean training ...")
+        stats_clean = self._iterate(
+            kettle,
+            poison_delta=None,
+            max_epoch=max_epoch,
+            pretraining_phase=True if self.args.pretrain_dataset is not None else False,
+        )
         if not self.args.retrain_scenario == None:
             self.save_feature_representation()
 
-        if self.args.scenario in ['transfer', 'finetuning']:
+        if self.args.scenario in ["transfer", "finetuning"]:
             self.save_feature_representation()
-            if self.args.scenario == 'transfer':
+            if self.args.scenario == "transfer":
                 self.freeze_feature_extractor()
                 self.eval()
-                print('Features frozen.')
+                print("Features frozen.")
             if self.args.pretrain_dataset is not None:
                 # Train a clean finetuned model/head
-                if self.args.scenario == 'transfer':
-                    self.reinitialize_last_layer(reduce_lr_factor=1.0, seed=self.model_init_seed)
+                if self.args.scenario == "transfer":
+                    self.reinitialize_last_layer(
+                        reduce_lr_factor=1.0, seed=self.model_init_seed
+                    )
                 else:
-                    self.reinitialize_last_layer(reduce_lr_factor=FINETUNING_LR_DROP, seed=self.model_init_seed, keep_last_layer=False)
+                    self.reinitialize_last_layer(
+                        reduce_lr_factor=FINETUNING_LR_DROP,
+                        seed=self.model_init_seed,
+                        keep_last_layer=False,
+                    )
                 # Finetune from base model
-                print(f'Training clean {self.args.scenario} model on top of {self.args.pretrain_dataset} base model.')
-                stats_clean = self._iterate(kettle, poison_delta=None, max_epoch=max_epoch)
+                print(
+                    f"Training clean {self.args.scenario} model on top of {self.args.pretrain_dataset} base model."
+                )
+                stats_clean = self._iterate(
+                    kettle, poison_delta=None, max_epoch=max_epoch
+                )
 
         return stats_clean
 
     def retrain(self, kettle, poison_delta, max_epoch=None):
         """Check poison on the initialization it was brewed on."""
-        if self.args.scenario == 'from-scratch':
+        if self.args.scenario == "from-scratch":
             self.initialize(seed=self.model_init_seed)
-            print('Model re-initialized to initial seed.')
-        elif self.args.scenario == 'transfer':
+            print("Model re-initialized to initial seed.")
+        elif self.args.scenario == "transfer":
             self.load_feature_representation()
-            self.reinitialize_last_layer(reduce_lr_factor=1.0, seed=self.model_init_seed)
-            print('Linear layer reinitialized to initial seed.')
-        elif self.args.scenario == 'finetuning':
+            self.reinitialize_last_layer(
+                reduce_lr_factor=1.0, seed=self.model_init_seed
+            )
+            print("Linear layer reinitialized to initial seed.")
+        elif self.args.scenario == "finetuning":
             self.load_feature_representation()
-            self.reinitialize_last_layer(reduce_lr_factor=FINETUNING_LR_DROP, seed=self.model_init_seed, keep_last_layer=False)
+            self.reinitialize_last_layer(
+                reduce_lr_factor=FINETUNING_LR_DROP,
+                seed=self.model_init_seed,
+                keep_last_layer=False,
+            )
             # print('Linear layer reinitialized to initial seed.')
-            print('Completely warmstart finetuning!')
+            print("Completely warmstart finetuning!")
         return self._iterate(kettle, poison_delta=poison_delta, max_epoch=max_epoch)
 
     def validate(self, kettle, poison_delta, val_max_epoch=None):
@@ -142,21 +166,27 @@ class _VictimBase:
         run_stats = list()
 
         for runs in range(self.args.vruns):
-            if self.args.scenario == 'from-scratch':
+            if self.args.scenario == "from-scratch":
                 self.initialize()
-                print('Model reinitialized to random seed.')
-            elif self.args.scenario == 'transfer':
+                print("Model reinitialized to random seed.")
+            elif self.args.scenario == "transfer":
                 self.load_feature_representation()
                 self.reinitialize_last_layer(reduce_lr_factor=1.0)
-                print('Linear layer reinitialized to initial seed.')
-            elif self.args.scenario == 'finetuning':
+                print("Linear layer reinitialized to initial seed.")
+            elif self.args.scenario == "finetuning":
                 self.load_feature_representation()
-                self.reinitialize_last_layer(reduce_lr_factor=FINETUNING_LR_DROP, keep_last_layer=True)
+                self.reinitialize_last_layer(
+                    reduce_lr_factor=FINETUNING_LR_DROP, keep_last_layer=True
+                )
                 # print('Linear layer reinitialized to initial seed.')
-                print('Completely warmstart finetuning!')
+                print("Completely warmstart finetuning!")
 
             # Train new model
-            run_stats.append(self._iterate(kettle, poison_delta=poison_delta, max_epoch=val_max_epoch))
+            run_stats.append(
+                self._iterate(
+                    kettle, poison_delta=poison_delta, max_epoch=val_max_epoch
+                )
+            )
         return average_dicts(run_stats)
 
     def eval(self, dropout=True):
@@ -167,7 +197,9 @@ class _VictimBase:
         """Validate a given poison by training the model and checking source accuracy."""
         raise NotImplementedError()
 
-    def _adversarial_step(self, kettle, poison_delta, step, poison_sources, true_classes):
+    def _adversarial_step(
+        self, kettle, poison_delta, step, poison_sources, true_classes
+    ):
         """Step through a model epoch to in turn minimize source loss."""
         raise NotImplementedError()
 
@@ -185,7 +217,27 @@ class _VictimBase:
 
         return model, defs, optimizer, scheduler
 
-
-    def _step(self, kettle, poison_delta, epoch, stats, model, defs, optimizer, scheduler, pretraining_phase=False):
-        run_step(kettle, poison_delta, epoch, stats, model, defs, optimizer, scheduler,
-                 loss_fn=self.loss_fn, pretraining_phase=pretraining_phase)
+    def _step(
+        self,
+        kettle,
+        poison_delta,
+        epoch,
+        stats,
+        model,
+        defs,
+        optimizer,
+        scheduler,
+        pretraining_phase=False,
+    ):
+        run_step(
+            kettle,
+            poison_delta,
+            epoch,
+            stats,
+            model,
+            defs,
+            optimizer,
+            scheduler,
+            loss_fn=self.loss_fn,
+            pretraining_phase=pretraining_phase,
+        )

@@ -6,9 +6,11 @@ PIN_MEMORY = True
 NON_BLOCKING = True
 BENCHMARK = True
 MAX_THREADING = 40
-SHARING_STRATEGY = 'file_descriptor'  # file_system or file_descriptor
+SHARING_STRATEGY = "file_descriptor"  # file_system or file_descriptor
 
-DISTRIBUTED_BACKEND = 'gloo'  # nccl would be faster, but require gpu-transfers for indexing and stuff
+DISTRIBUTED_BACKEND = (
+    "gloo"  # nccl would be faster, but require gpu-transfers for indexing and stuff
+)
 
 cifar10_mean = [0.4914672374725342, 0.4822617471218109, 0.4467701315879822]
 cifar10_std = [0.24703224003314972, 0.24348513782024384, 0.26158785820007324]
@@ -20,6 +22,6 @@ imagenet_mean = [0.485, 0.456, 0.406]
 imagenet_std = [0.229, 0.224, 0.225]
 tiny_imagenet_mean = [0.4789886474609375, 0.4457630515098572, 0.3944724500179291]
 tiny_imagenet_std = [0.27698642015457153, 0.2690644860267639, 0.2820819020271301]
-#add svhn
+# add svhn
 svhn_mean = [0.485, 0.456, 0.406]
 svhn_std = [0.229, 0.224, 0.225]

@@ -7,8 +7,8 @@ Output: mixed_x, additional_labels, mixing_lambda
 except for maxup, which returns n tuples of this output signature.
 """
 
-import torch
 import numpy as np
+import torch
 
 
 class Mixup(torch.nn.Module):
@@ -20,12 +20,15 @@ class Mixup(torch.nn.Module):
         self.nway = nway
         self.mixing_alpha = alpha
 
-
     def forward(self, x, y, epoch=None):
         if self.mixing_alpha > 0:
-            lmb = np.random.dirichlet([self.mixing_alpha] * self.nway, size=1).tolist()[0]
+            lmb = np.random.dirichlet([self.mixing_alpha] * self.nway, size=1).tolist()[
+                0
+            ]
             batch_size = x.shape[0]
-            indices = [torch.randperm(batch_size, device=x.device) for _ in range(self.nway)]
+            indices = [
+                torch.randperm(batch_size, device=x.device) for _ in range(self.nway)
+            ]
             mixed_x = sum([l * x[index, :] for l, index in zip(lmb, indices)])
             y_s = [y[index] for index in indices]
         else:
@@ -35,11 +38,23 @@ class Mixup(torch.nn.Module):
 
         return mixed_x, y_s, lmb
 
-    def corrected_loss(self, outputs, extra_labels, lmb=1.0, loss_fn=torch.nn.CrossEntropyLoss()):
+    def corrected_loss(
+        self, outputs, extra_labels, lmb=1.0, loss_fn=torch.nn.CrossEntropyLoss()
+    ):
         """Compute the corrected loss under consideration of the mixing."""
         predictions = torch.argmax(outputs.data, dim=1)
-        correct_preds = sum([w * predictions.eq(l.data).sum().float().item() for w, l in zip(lmb, extra_labels)])
-        loss = sum([weight * loss_fn(outputs, label) for weight, label in zip(lmb, extra_labels)])
+        correct_preds = sum(
+            [
+                w * predictions.eq(l.data).sum().float().item()
+                for w, l in zip(lmb, extra_labels)
+            ]
+        )
+        loss = sum(
+            [
+                weight * loss_fn(outputs, label)
+                for weight, label in zip(lmb, extra_labels)
+            ]
+        )
         return loss, correct_preds
 
 
@@ -59,10 +74,14 @@ class Cutout(torch.nn.Module):
         # generate mixed sample
         rand_index = torch.randperm(x.shape[0], device=x.device)
         bbx1, bby1, bbx2, bby2 = self._rand_bbox(x.size(), self.lmb)
-        x[:, :, bbx1:bbx2, bby1:bby2] = torch.zeros_like(x)[rand_index, :, bbx1:bbx2, bby1:bby2]
+        x[:, :, bbx1:bbx2, bby1:bby2] = torch.zeros_like(x)[
+            rand_index, :, bbx1:bbx2, bby1:bby2
+        ]
         return x, y, None
 
-    def corrected_loss(self, outputs, extra_labels, lmb=1.0, loss_fn=torch.nn.CrossEntropyLoss()):
+    def corrected_loss(
+        self, outputs, extra_labels, lmb=1.0, loss_fn=torch.nn.CrossEntropyLoss()
+    ):
         """Compute loss. This is just a normal loss for cutout."""
         predictions = torch.argmax(outputs.data, dim=1)
         correct_preds = predictions.eq(extra_labels.data).sum().float().item()
@@ -73,7 +92,7 @@ class Cutout(torch.nn.Module):
     def _rand_bbox(size, lmb):
         W = size[2]
         H = size[3]
-        cut_rat = np.sqrt(1. - lmb)
+        cut_rat = np.sqrt(1.0 - lmb)
         cut_w = np.int(W * cut_rat)
         cut_h = np.int(H * cut_rat)
         # uniform
@@ -133,7 +152,7 @@ class Maxup(torch.nn.Module):
         self.ntrials = ntrials
         self.warmup_epochs = warmup_epochs
 
-        self.max_criterion = torch.nn.CrossEntropyLoss(reduction='none')
+        self.max_criterion = torch.nn.CrossEntropyLoss(reduction="none")
 
     def forward(self, x, y, epoch=None):
         if epoch > self.warmup_epochs:
@@ -146,17 +165,27 @@ class Maxup(torch.nn.Module):
 
             mixed_x = torch.cat(mixed_x, dim=0)
             additional_labels = torch.cat(additional_labels, dim=0)
-            mixing_lambda = torch.cat(mixing_lambda, dim=0) if mixing_lambda[0] is not None else None
+            mixing_lambda = (
+                torch.cat(mixing_lambda, dim=0)
+                if mixing_lambda[0] is not None
+                else None
+            )
             return mixed_x, additional_labels, mixing_lambda
         else:
             return x, y, None
 
-    def corrected_loss(self, outputs, extra_labels, lmb=1.0, loss_fn=torch.nn.CrossEntropyLoss()):
+    def corrected_loss(
+        self, outputs, extra_labels, lmb=1.0, loss_fn=torch.nn.CrossEntropyLoss()
+    ):
         """Compute loss. Here the loss is computed as worst-case estimate over the trials."""
         batch_size = outputs.shape[0] // self.ntrials
-        correct_preds = (torch.argmax(outputs.data, dim=1) == extra_labels).sum().item() / self.ntrials
+        correct_preds = (
+            torch.argmax(outputs.data, dim=1) == extra_labels
+        ).sum().item() / self.ntrials
         if lmb is not None:
-            stacked_loss = self.max_criterion(outputs, extra_labels).view(batch_size, self.ntrials, -1)
+            stacked_loss = self.max_criterion(outputs, extra_labels).view(
+                batch_size, self.ntrials, -1
+            )
             loss = stacked_loss.max(dim=1)[0].mean()
         else:
             loss = loss_fn(outputs, extra_labels)

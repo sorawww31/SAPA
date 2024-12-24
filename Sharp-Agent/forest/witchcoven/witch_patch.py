@@ -3,13 +3,14 @@
 import torch
 import torchvision
 from PIL import Image
-from ..consts import BENCHMARK
+
 from forest.data import datasets
+
+from ..consts import BENCHMARK
+
 torch.backends.cudnn.benchmark = BENCHMARK
 
 from .witch_base import _Witch
-
-
 
 
 class WitchPatch(_Witch):
@@ -29,8 +30,19 @@ class WitchPatch(_Witch):
         for poison_id, (img, label, image_id) in enumerate(kettle.poisonset):
             poison_img = img.to(**self.setup)
             delta_slice = torch.zeros_like(poison_img)
-            diff_patch = self.patch - poison_img[:, poison_img.shape[1] - self.patch.shape[1]:, poison_img.shape[2] - self.patch.shape[2]:]
-            delta_slice[:, delta_slice.shape[1] - self.patch.shape[1]:, delta_slice.shape[2] - self.patch.shape[2]:] = diff_patch
+            diff_patch = (
+                self.patch
+                - poison_img[
+                    :,
+                    poison_img.shape[1] - self.patch.shape[1] :,
+                    poison_img.shape[2] - self.patch.shape[2] :,
+                ]
+            )
+            delta_slice[
+                :,
+                delta_slice.shape[1] - self.patch.shape[1] :,
+                delta_slice.shape[2] - self.patch.shape[2] :,
+            ] = diff_patch
             poison_delta[poison_id] = delta_slice.cpu()
 
         return poison_delta.cpu()
@@ -41,7 +53,7 @@ class WitchPatch(_Witch):
         return patch
 
     def patch_sources(self, kettle):
-        if self.args.load_patch == '':
+        if self.args.load_patch == "":
             patch = self._create_patch([3, int(self.args.eps), int(self.args.eps)])
         else:
             patch = Image.open(self.args.load_patch)
@@ -55,7 +67,18 @@ class WitchPatch(_Witch):
         for idx, (source_img, label, image_id) in enumerate(kettle.sourceset):
             source_img = source_img.to(**self.setup)
             delta_slice = torch.zeros_like(source_img).squeeze(0)
-            diff_patch = self.patch - source_img[:, source_img.shape[1] - self.patch.shape[1]:, source_img.shape[2] - self.patch.shape[2]:]
-            delta_slice[:, delta_slice.shape[1] - self.patch.shape[1]:, delta_slice.shape[2] - self.patch.shape[2]:] = diff_patch
+            diff_patch = (
+                self.patch
+                - source_img[
+                    :,
+                    source_img.shape[1] - self.patch.shape[1] :,
+                    source_img.shape[2] - self.patch.shape[2] :,
+                ]
+            )
+            delta_slice[
+                :,
+                delta_slice.shape[1] - self.patch.shape[1] :,
+                delta_slice.shape[2] - self.patch.shape[2] :,
+            ] = diff_patch
             source_delta.append(delta_slice.cpu())
         kettle.sourceset = datasets.Deltaset(kettle.sourceset, source_delta)

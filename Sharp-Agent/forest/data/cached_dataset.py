@@ -1,6 +1,7 @@
 """Write a PyTorch dataset into RAM."""
 
 import torch
+
 from ..consts import PIN_MEMORY
 
 
@@ -11,23 +12,32 @@ class CachedDataset(torch.utils.data.Dataset):
         """Initialize with a given pytorch dataset."""
         self.dataset = dataset
         self.cache = []
-        print('Caching started ...')
+        print("Caching started ...")
         batch_size = min(len(dataset) // max(num_workers, 1), 8192)
-        cacheloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size,
-                                                  shuffle=False, drop_last=False, num_workers=num_workers,
-                                                  pin_memory=False)
+        cacheloader = torch.utils.data.DataLoader(
+            dataset,
+            batch_size=batch_size,
+            shuffle=False,
+            drop_last=False,
+            num_workers=num_workers,
+            pin_memory=False,
+        )
 
         # Allocate memory:
-        self.cache = torch.empty((len(self.dataset), *self.dataset[0][0].shape), pin_memory=PIN_MEMORY)
+        self.cache = torch.empty(
+            (len(self.dataset), *self.dataset[0][0].shape), pin_memory=PIN_MEMORY
+        )
 
         pointer = 0
         for data in cacheloader:
             batch_length = data[0].shape[0]
-            self.cache[pointer: pointer + batch_length] = data[0]  # assuming the first return value of data is the image sample!
+            self.cache[pointer : pointer + batch_length] = data[
+                0
+            ]  # assuming the first return value of data is the image sample!
             pointer += batch_length
             print(f"[{pointer} / {len(dataset)}] samples processed.")
 
-        print(f'Dataset sucessfully cached into RAM.')
+        print(f"Dataset sucessfully cached into RAM.")
 
     def __len__(self):
         return len(self.dataset)

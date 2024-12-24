@@ -1,29 +1,35 @@
 """Optimization setups."""
 
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 
-BRITTLE_NETS = ['convnet', 'mobilenet', 'vgg', 'alexnet']  # handled with lower learning rate
+BRITTLE_NETS = [
+    "convnet",
+    "mobilenet",
+    "vgg",
+    "alexnet",
+]  # handled with lower learning rate
+
 
 def training_strategy(model_name, args):
     """Parse training strategy."""
-    if args.optimization == 'conservative':
+    if args.optimization == "conservative":
         defaults = CONSERVATIVE
-    elif args.optimization == 'private-gaussian':
+    elif args.optimization == "private-gaussian":
         defaults = PRIVACY_GAUSSIAN
-    elif args.optimization == 'private-laplacian':
+    elif args.optimization == "private-laplacian":
         defaults = PRIVACY_LAPLACIAN
-    elif args.optimization == 'adversarial':
+    elif args.optimization == "adversarial":
         defaults = ADVERSARIAL
-    elif args.optimization == 'basic':
+    elif args.optimization == "basic":
         defaults = BASIC
-    elif args.optimization == 'adam':
+    elif args.optimization == "adam":
         defaults = ADAM
-    elif args.optimization == 'defensive':
+    elif args.optimization == "defensive":
         defaults = DEFENSE
-    elif args.optimization == 'standard2':
+    elif args.optimization == "standard2":
         defaults = STANDARD2
     else:
-        raise ValueError(f'Unknown opt. strategy {args.optimization}.')
+        raise ValueError(f"Unknown opt. strategy {args.optimization}.")
     defs = Hyperparameters(**defaults.asdict())
 
     # Overwrite some hyperparameters from args
@@ -42,30 +48,30 @@ def training_strategy(model_name, args):
 
     # Modifications to gradient noise settings
     if args.gradient_noise is not None:
-        defs.privacy['noise'] = args.gradient_noise
+        defs.privacy["noise"] = args.gradient_noise
     if args.gradient_clip is not None:
-        defs.privacy['clip'] = args.gradient_clip
+        defs.privacy["clip"] = args.gradient_clip
 
     # Modifications to defense settings:
     if args.defense_type is not None:
-        defs.novel_defense['type'] = args.defense_type
+        defs.novel_defense["type"] = args.defense_type
     if args.defense_strength is not None:
-        defs.novel_defense['strength'] = args.defense_strength
+        defs.novel_defense["strength"] = args.defense_strength
     else:
-        defs.novel_defense['strength'] = args.eps
+        defs.novel_defense["strength"] = args.eps
     if args.defense_sources is not None:
-        defs.novel_defense['source_selection'] = args.defense_sources
+        defs.novel_defense["source_selection"] = args.defense_sources
     if args.defense_steps is not None:
-        defs.novel_defense['steps'] = args.adversarial_steps
+        defs.novel_defense["steps"] = args.adversarial_steps
 
     # Modify data mixing arguments:
     if args.mixing_method is not None:
-        defs.mixing_method['type'] = args.mixing_method
+        defs.mixing_method["type"] = args.mixing_method
 
-    defs.mixing_method['correction'] = args.mixing_disable_correction
+    defs.mixing_method["correction"] = args.mixing_disable_correction
 
     if args.mixing_strength is not None:
-        defs.mixing_method['strength'] = args.mixing_strength
+        defs.mixing_method["strength"] = args.mixing_strength
 
     # Modify defense behavior
     defs.adaptive_attack = args.disable_adaptive_attack
@@ -78,20 +84,20 @@ def training_strategy(model_name, args):
 class Hyperparameters:
     """Hyperparameters used by this framework."""
 
-    name : str
+    name: str
 
-    epochs : int
-    batch_size : int
-    optimizer : str
-    lr : float
-    scheduler : str
-    weight_decay : float
-    augmentations : bool
-    privacy : dict
-    validate : int
+    epochs: int
+    batch_size: int
+    optimizer: str
+    lr: float
+    scheduler: str
+    weight_decay: float
+    augmentations: bool
+    privacy: dict
+    validate: int
     novel_defense: dict
-    mixing_method : dict
-    adaptive_attack : bool
+    mixing_method: dict
+    adaptive_attack: bool
     defend_features_only: bool
 
     def asdict(self):
@@ -99,88 +105,88 @@ class Hyperparameters:
 
 
 CONSERVATIVE = Hyperparameters(
-    name='conservative',
+    name="conservative",
     lr=0.1,
     epochs=40,
     batch_size=128,
-    optimizer='SGD',
-    scheduler='linear',
+    optimizer="SGD",
+    scheduler="linear",
     weight_decay=5e-4,
     augmentations=True,
     privacy=dict(clip=None, noise=None, distribution=None),
     validate=10,
-    novel_defense=dict(type='', strength=16.0, source_selection='sep-half', steps=5),
-    mixing_method=dict(type='', strength=0.0, correction=False),
+    novel_defense=dict(type="", strength=16.0, source_selection="sep-half", steps=5),
+    mixing_method=dict(type="", strength=0.0, correction=False),
     adaptive_attack=True,
     defend_features_only=False,
 )
 
 STANDARD2 = Hyperparameters(
-    name='conservative',
+    name="conservative",
     lr=0.1,
     epochs=200,
     batch_size=128,
-    optimizer='SGD',
-    scheduler='linear',
+    optimizer="SGD",
+    scheduler="linear",
     weight_decay=5e-4,
     augmentations=True,
     privacy=dict(clip=None, noise=None, distribution=None),
     validate=10,
-    novel_defense=dict(type='', strength=16.0, source_selection='sep-half', steps=5),
-    mixing_method=dict(type='', strength=0.0, correction=False),
+    novel_defense=dict(type="", strength=16.0, source_selection="sep-half", steps=5),
+    mixing_method=dict(type="", strength=0.0, correction=False),
     adaptive_attack=True,
     defend_features_only=False,
 )
 
 ADAM = Hyperparameters(
-    name='adam',
+    name="adam",
     lr=0.1,
     epochs=200,
     batch_size=128,
-    optimizer='Adam',
-    scheduler='linear',
+    optimizer="Adam",
+    scheduler="linear",
     weight_decay=5e-4,
     augmentations=True,
     privacy=dict(clip=None, noise=None, distribution=None),
     validate=10,
-    novel_defense=dict(type='', strength=16.0, source_selection='sep-half', steps=5),
-    mixing_method=dict(type='', strength=0.0, correction=False),
+    novel_defense=dict(type="", strength=16.0, source_selection="sep-half", steps=5),
+    mixing_method=dict(type="", strength=0.0, correction=False),
     adaptive_attack=True,
     defend_features_only=False,
 )
 
 
 PRIVACY_GAUSSIAN = Hyperparameters(
-    name='private-gaussian',
+    name="private-gaussian",
     lr=0.1,
     epochs=40,
     batch_size=128,
-    optimizer='SGD',
-    scheduler='linear',
+    optimizer="SGD",
+    scheduler="linear",
     weight_decay=5e-4,
     augmentations=True,
-    privacy=dict(clip=1.0, noise=0.01, distribution='gaussian'),
+    privacy=dict(clip=1.0, noise=0.01, distribution="gaussian"),
     validate=10,
-    novel_defense=dict(type='', strength=16.0, source_selection='sep-half', steps=5),
-    mixing_method=dict(type='', strength=0.0, correction=False),
+    novel_defense=dict(type="", strength=16.0, source_selection="sep-half", steps=5),
+    mixing_method=dict(type="", strength=0.0, correction=False),
     adaptive_attack=True,
     defend_features_only=False,
 )
 
 
 PRIVACY_LAPLACIAN = Hyperparameters(
-    name='private-gaussian',
+    name="private-gaussian",
     lr=0.1,
     epochs=40,
     batch_size=128,
-    optimizer='SGD',
-    scheduler='linear',
+    optimizer="SGD",
+    scheduler="linear",
     weight_decay=5e-4,
     augmentations=True,
-    privacy=dict(clip=1.0, noise=0.01, distribution='laplacian'),
+    privacy=dict(clip=1.0, noise=0.01, distribution="laplacian"),
     validate=10,
-    novel_defense=dict(type='', strength=16.0, source_selection='sep-half', steps=5),
-    mixing_method=dict(type='', strength=0.0, correction=False),
+    novel_defense=dict(type="", strength=16.0, source_selection="sep-half", steps=5),
+    mixing_method=dict(type="", strength=0.0, correction=False),
     adaptive_attack=True,
     defend_features_only=False,
 )
@@ -190,18 +196,18 @@ PRIVACY_LAPLACIAN = Hyperparameters(
 This setup resembles the training procedure in MetaPoison.
 """
 BASIC = Hyperparameters(
-    name='basic',
+    name="basic",
     lr=0.1,
     epochs=80,
     batch_size=128,
-    optimizer='SGD-basic',
-    scheduler='none',
+    optimizer="SGD-basic",
+    scheduler="none",
     weight_decay=0,
     augmentations=False,
     privacy=dict(clip=None, noise=None, distribution=None),
     validate=10,
-    novel_defense=dict(type='', strength=16.0, source_selection='sep-half', steps=5),
-    mixing_method=dict(type='', strength=0.0, correction=False),
+    novel_defense=dict(type="", strength=16.0, source_selection="sep-half", steps=5),
+    mixing_method=dict(type="", strength=0.0, correction=False),
     adaptive_attack=True,
     defend_features_only=False,
 )
@@ -209,18 +215,20 @@ BASIC = Hyperparameters(
 
 """Implement adversarial training to defend against the poisoning."""
 ADVERSARIAL = Hyperparameters(
-    name='adversarial',
+    name="adversarial",
     lr=0.1,
     epochs=40,
     batch_size=128,
-    optimizer='SGD',
-    scheduler='linear',
+    optimizer="SGD",
+    scheduler="linear",
     weight_decay=5e-4,
     augmentations=True,
     privacy=dict(clip=None, noise=None, distribution=None),
     validate=10,
-    novel_defense=dict(type='adversarial-evasion', strength=8.0, source_selection='sep-p128', steps=5),
-    mixing_method=dict(type='', strength=0.0, correction=False),
+    novel_defense=dict(
+        type="adversarial-evasion", strength=8.0, source_selection="sep-p128", steps=5
+    ),
+    mixing_method=dict(type="", strength=0.0, correction=False),
     adaptive_attack=True,
     defend_features_only=False,
 )
@@ -228,18 +236,23 @@ ADVERSARIAL = Hyperparameters(
 """Implement novel defensive training to defend against the poisoning.
 Supply modifications via extra args"""
 DEFENSE = Hyperparameters(
-    name='noveldefense',
+    name="noveldefense",
     lr=0.1,
     epochs=40,
     batch_size=128,
-    optimizer='SGD',
-    scheduler='linear',
+    optimizer="SGD",
+    scheduler="linear",
     weight_decay=5e-4,
     augmentations=True,
     privacy=dict(clip=None, noise=None, distribution=None),
     validate=10,
-    novel_defense=dict(type='adversarial-wb-recombine', strength=16.0, source_selection='sep-half', steps=5),
-    mixing_method=dict(type='', strength=0.0, correction=False),
+    novel_defense=dict(
+        type="adversarial-wb-recombine",
+        strength=16.0,
+        source_selection="sep-half",
+        steps=5,
+    ),
+    mixing_method=dict(type="", strength=0.0, correction=False),
     adaptive_attack=True,
     defend_features_only=False,
 )

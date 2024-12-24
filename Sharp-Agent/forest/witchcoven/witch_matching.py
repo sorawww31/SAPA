@@ -1,15 +1,19 @@
 """Main class, holding information about models and training/testing routines."""
 
 import random
+
 import torch
-import random
 import torchvision
 from PIL import Image
+
+from forest.data import datasets
+
 from ..consts import BENCHMARK, NON_BLOCKING
 from ..utils import bypass_last_layer
-from forest.data import datasets
+
 torch.backends.cudnn.benchmark = BENCHMARK
 from .witch_base import _Witch
+
 
 class WitchGradientMatching(_Witch):
     """Brew passenger poison with given arguments.
