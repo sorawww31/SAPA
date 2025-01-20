@@ -445,7 +445,7 @@ def options():
     )
     parser.add_argument(
         "--retrain_max_epoch",
-        default=40,
+        default=None,
         type=int,
         help="Train only up to this epoch for retraining during crafting.",
     )
