@@ -66,157 +66,146 @@ def check_cosine_similarity(kettle, model, criterion, inputs, labels, step_size)
 def renewal_wolfecondition_stepsize(
     kettle, args, model, loss_fn, alpha, source_trainset, setup
 ):
-    c2, c1 = args.wolfe
+    """
+    1バッチのみを用いた近似的なWolfe条件チェックによるラインサーチ。
 
-    intended_labels = torch.tensor([data[1] for data in source_trainset]).to(
-        device=setup["device"], dtype=torch.long
-    )
+    Args:
+        kettle: （使っていないなら不要かもしれません）
+        args: 引数をまとめたオブジェクト。args.wolfe = (c2, c1) や args.wolfe_batch などを保持。
+        model: 対象のモデル (torch.nn.Module)
+        loss_fn: 損失関数
+        alpha: 初期学習率
+        source_trainset: [(img, label), ...] 形式のデータセット
+        setup: デバイス情報などを含む辞書。例: {"device": "cuda"}
 
-    target_images = torch.stack([data[0] for data in source_trainset]).to(**setup)
+    Returns:
+        Wolfe条件を満たした（あるいは失敗してフォールバックした）学習率 alpha
+    """
+    # -------------------------------------
+    # 1. パラメータ設定
+    # -------------------------------------
+    c2, c1 = args.wolfe  # Wolfe条件のパラメータ (通常は c1 < c2 )
+    batch_size = args.wolfe_batch  # 1バッチあたりのサンプル数
+
+    device = setup["device"]
+
+    max_iters = 40  # ラインサーチで試す最大イテレーション数
+    omega = 0.75  # 学習率を縮小するときの係数
+    fallback_alpha = 0.01  # Wolfe失敗時のフォールバック値
+
+    # -------------------------------------
+    # 2. 1バッチだけ用意
+    # -------------------------------------
+    intended_labels = torch.tensor([data[1] for data in source_trainset]).to(device)
+    target_images = torch.stack([data[0] for data in source_trainset]).to(device)
 
     dataset = torch.utils.data.TensorDataset(target_images, intended_labels)
-
     dataloader = torch.utils.data.DataLoader(
-        dataset, batch_size=args.wolfe_batch, shuffle=True
+        dataset, batch_size=batch_size, shuffle=True
     )
-    copy_model = copy.deepcopy(model)
 
-    fx_total = 0.0
-    nabla_fx_total = None
-    # for batch_images, batch_labels in dataloader:
-    batch_images, batch_labels = dataloader
-    fx = loss_fn(copy_model(batch_images), batch_labels)  # 損失を計算
+    # 1バッチ取り出し（データが足りない場合は StopIteration になるので注意）
+    try:
+        batch_images, batch_labels = next(iter(dataloader))
+    except StopIteration:
+        print("[Warning] Dataset is empty. Returning the original alpha:", alpha)
+        return alpha
 
-    nabla_fx = torch.autograd.grad(fx, copy_model.parameters(), create_graph=False)
+    batch_images = batch_images.to(device)
+    batch_labels = batch_labels.to(device)
 
-    fx_total += fx.item()
-    if nabla_fx_total is None:
-        nabla_fx_total = [g.clone() for g in nabla_fx]
-    else:
-        for i in range(len(nabla_fx_total)):
-            nabla_fx_total[i] += nabla_fx[i]
+    # -------------------------------------
+    # 3. 古い損失 (old_fx) と古い勾配 (old_grad) を計算
+    # -------------------------------------
+    copy_model_init = copy.deepcopy(model)
+    copy_model_init.eval()
 
-    del copy_model  # 不要な変数を削除してメモリを解放
-    torch.cuda.empty_cache()  # メモリを解放
+    fx = loss_fn(copy_model_init(batch_images), batch_labels)
+    old_fx = fx.item()
 
-    fx_total /= len(dataloader)
-    for i in range(len(nabla_fx_total)):
-        nabla_fx_total[i] /= len(dataloader)
+    # grad はタプルで返ってくるのでリストに変換しておく
+    grads = torch.autograd.grad(fx, copy_model_init.parameters(), create_graph=False)
+    old_grad = [g.clone() for g in grads]
 
-    # Wolfe条件を満たす学習率を探索
-    max_iters = 40  # 最大で40回の反復を行う
-    omega = 0.75  # 学習率の縮小係数
+    # メモリ節約
+    del copy_model_init
+    torch.cuda.empty_cache()
+
+    def compute_loss_and_grad(_model, images, labels):
+        _model.eval()
+        l = loss_fn(_model(images), labels)
+        fx_val = l.item()
+        g_list = torch.autograd.grad(l, _model.parameters(), create_graph=False)
+        g_list = [g_.clone() for g_ in g_list]
+        return fx_val, g_list
+
+    # -------------------------------------
+    # 5. 事前に old_grad のノルム平方を計算しておく (||g||^2)
+    # -------------------------------------
+    old_grad_normdot = sum((g_i * g_i).sum().item() for g_i in old_grad)
+
+    old_fx_val = old_fx
     wolfe_satisfied = False
 
-    def compute_total_loss_and_grad(_model):
-        _fx = 0.0
-        _grads_accum = None
-        for b_images, b_labels in dataloader:
-            l = loss_fn(_model(b_images), b_labels)
-            _fx += l.item()
-            g_ = torch.autograd.grad(l, _model.parameters(), create_graph=False)
-            if _grads_accum is None:
-                _grads_accum = [gg.clone() for gg in g_]
-            else:
-                for i in range(len(_grads_accum)):
-                    _grads_accum[i] += g_[i]
-        _fx /= len(dataloader)
-        for i in range(len(_grads_accum)):
-            _grads_accum[i] /= float(len(dataloader))
-        return _fx, _grads_accum
-
-    # We'll interpret fx_total, nabla_fx_total as the "old" loss and gradient.
-    old_fx = fx_total
-    old_grad = nabla_fx_total
-
-    # We need the dot(grad, step) for the sufficient-decrease condition
-    # The "direction" is typically -grad, so dot(grad, direction) = -||grad||^2
-    # but user code attempts to do something like dot(nabla_fx_total[i], updated_params) ...
-    # We'll keep a minimal fix and rely on the existing logic.
-
-    # Precompute grad dot grad (we'll need it for the curvature condition)
-    old_grad_normdot = sum([torch.sum(g_i * g_i).item() for g_i in old_grad])
-
+    # -------------------------------------
+    # 6. ラインサーチ: alpha を試行してWolfe条件(Armijo + Curvature)を満たすかチェック
+    # -------------------------------------
     for _ in range(max_iters):
-        # -------------------------------------------------
-        # (a) Create a temp copy of the original model and do a step: p -= alpha*g
-        # -------------------------------------------------
+        # (a) モデルをコピーしてパラメータを1ステップ更新 (p <- p - alpha * grad)
         copy_model_temp = copy.deepcopy(model)
         with torch.no_grad():
             for p, g in zip(copy_model_temp.parameters(), old_grad):
-                p.sub_(alpha * g)  # p.data -= alpha*g
+                p.sub_(alpha * g)
 
-        # -------------------------------------------------
-        # (b) Compute new loss
-        # -------------------------------------------------
-        fx_new_total = 0.0
-        for batch_images, batch_labels in dataloader:
-            fx_new = loss_fn(copy_model_temp(batch_images), batch_labels)
-            fx_new_total += fx_new.item()
-        fx_new_total /= len(dataloader)
+        # (b) 新しい損失 fx_new を(同じ1バッチ上で)計算
+        fx_new = loss_fn(copy_model_temp(batch_images), batch_labels).item()
 
-        # -------------------------------------------------
-        # (c) Check "sufficient decrease" (Armijo) condition:
-        #     fx_new <= fx - c1 * alpha * dot(grad, direction)
-        # By default direction = -grad, so dot(grad, direction) = -||grad||^2
-        # The user code tries to do sum(torch.dot(g.view(-1), p.view(-1))).
-        # We'll replicate it closely but in a safer way:
-        # NOTE: A simpler approach:
-        #   direction_dot_grad = sum( (g*g).sum() ) (with a minus sign if needed)
-        #   but let's preserve the original logic as much as possible.
-        # -------------------------------------------------
+        # (c) Armijo 条件 (十分な減少)
+        #     - 標準的には fx_new <= old_fx_val - c1 * alpha * (grad·grad)
+        #       だが、元コードは direction_dot_grad = sum(dot(old_grad, new_param)) を使う。
         direction_dot_grad = 0.0
-        # The direction is "delta_p = -alpha*g" from original p to new p
-        # But the user code does: sum(torch.dot(g.view(-1), p.view(-1))).
-        # That is not typical for standard line-search, but let's keep it.
         with torch.no_grad():
-            copy_model_params = list(copy_model_temp.parameters())
-            for g_i, p_i in zip(old_grad, copy_model_params):
+            for g_i, p_i in zip(old_grad, copy_model_temp.parameters()):
                 direction_dot_grad += torch.dot(g_i.view(-1), p_i.view(-1)).item()
 
-        # The "old_fx - c1 * alpha * <g,d>" part
-        # If direction is -g, <g,d> = -||g||^2. But user wants the dot with new p's ...
-        # We'll preserve their formula:
-        lhs = fx_new_total
-        rhs = old_fx - c1 * alpha * direction_dot_grad
-
+        lhs = fx_new
+        rhs = old_fx_val - c1 * alpha * direction_dot_grad  # 元コード踏襲
         sufficient_decrease = lhs <= rhs
 
         if sufficient_decrease:
-            # -------------------------------------------------
-            # (d) Check curvature condition:
+            # (d) Curvature 条件
             #     dot(nabla_fx_new, old_grad) >= c2 * dot(old_grad, old_grad)
-            # -------------------------------------------------
-            # We need the new gradient at the new model
-            fx_temp, nabla_fx_new_total = compute_total_loss_and_grad(copy_model_temp)
+            fx_temp, nabla_fx_new = compute_loss_and_grad(
+                copy_model_temp, batch_images, batch_labels
+            )
 
             curvature_condition = True
-            for i in range(len(nabla_fx_new_total)):
-                lhs_curv = torch.dot(
-                    nabla_fx_new_total[i].view(-1), old_grad[i].view(-1)
-                )
-                rhs_curv = c2 * torch.dot(old_grad[i].view(-1), old_grad[i].view(-1))
-                if lhs_curv.item() < rhs_curv.item():
+            for g_new_i, g_old_i in zip(nabla_fx_new, old_grad):
+                lhs_curv = torch.dot(g_new_i.view(-1), g_old_i.view(-1)).item()
+                rhs_curv = c2 * torch.dot(g_old_i.view(-1), g_old_i.view(-1)).item()
+                if lhs_curv < rhs_curv:
                     curvature_condition = False
                     break
 
             if curvature_condition:
+                # Wolfe 条件を満たしたのでラインサーチ終了
                 wolfe_satisfied = True
-                # Done with line search
                 del copy_model_temp
                 torch.cuda.empty_cache()
                 break
 
-        # If we get here, Wolfe not satisfied -> reduce alpha
+        # Wolfe 条件を満たさなかった場合 -> alpha を縮小してリトライ
         alpha *= omega
 
-        # Clean up each iteration
         del copy_model_temp
         torch.cuda.empty_cache()
 
+    # -------------------------------------
+    # 7. max_iters試してもダメならフォールバック
+    # -------------------------------------
     if not wolfe_satisfied:
-        print("NO WOLFE CONDITION SATISFIED. USING ALPHA=0.01")
-        alpha = 0.01
+        print(f"[Warning] NO WOLFE CONDITION SATISFIED. USING ALPHA={fallback_alpha}")
+        alpha = fallback_alpha
 
     return alpha
 
