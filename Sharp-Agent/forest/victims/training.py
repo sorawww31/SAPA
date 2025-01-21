@@ -1,15 +1,224 @@
 """Repeatable code parts concerning optimization and training schedules."""
 
+import copy
 from collections import defaultdict
 
 import higher
 import torch
+import torch.nn.functional as F
+
+import wandb
 
 from ..consts import BENCHMARK, NON_BLOCKING
 from .batched_attacks import _gradient_matching, construct_attack
 from .utils import print_and_save_stats
 
 torch.backends.cudnn.benchmark = BENCHMARK
+
+
+def check_cosine_similarity(kettle, model, criterion, inputs, labels, step_size):
+    device = kettle.setup["device"]
+    model.eval()
+
+    intended_labels = torch.tensor([data[1] for data in kettle.source_trainset]).to(
+        device=device, dtype=torch.long
+    )
+
+    target_images = torch.stack([data[0] for data in kettle.source_trainset]).to(
+        **kettle.setup
+    )
+
+    outputs_normal = model(inputs)
+    try:
+        fx, _ = criterion(outputs_normal, labels)
+    except:
+        fx = criterion(outputs_normal, labels)
+
+    # (B) grads_normal を取得
+    grads_normal = torch.autograd.grad(fx, model.parameters(), retain_graph=True)
+    grads_normal_flat = torch.cat([g.view(-1) for g in grads_normal])
+
+    # (C) ターゲットバッチの forward
+    outputs_target = model(target_images)
+    try:
+        fx_target, _ = criterion(outputs_target, intended_labels)
+    except:
+        fx_target = criterion(outputs_target, intended_labels)
+
+    # (D) grads_target を取得
+    grads_target = torch.autograd.grad(fx_target, model.parameters())
+    grads_target_flat = torch.cat([g.view(-1) for g in grads_target])
+
+    # (E) Cosine Similarity を一回で計算
+    cos_sim = F.cosine_similarity(grads_normal_flat, grads_target_flat, dim=0)
+    if kettle.args.wandb:
+        wandb.log(
+            {
+                "train_loss": fx.item(),
+                "target_loss": fx_target.item(),
+                "cosine_similarity": cos_sim.item(),
+                "step-size": step_size,
+            }
+        )
+    return cos_sim.item()
+
+
+def renewal_wolfecondition_stepsize(
+    kettle, args, model, loss_fn, alpha, source_trainset, setup
+):
+    c2, c1 = args.wolfe
+
+    intended_labels = torch.tensor([data[1] for data in source_trainset]).to(
+        device=setup["device"], dtype=torch.long
+    )
+
+    target_images = torch.stack([data[0] for data in source_trainset]).to(**setup)
+
+    dataset = torch.utils.data.TensorDataset(target_images, intended_labels)
+
+    dataloader = torch.utils.data.DataLoader(
+        dataset, batch_size=args.wolfe_batch, shuffle=True
+    )
+    copy_model = copy.deepcopy(model)
+
+    fx_total = 0.0
+    nabla_fx_total = None
+    # for batch_images, batch_labels in dataloader:
+    batch_images, batch_labels = dataloader
+    fx = loss_fn(copy_model(batch_images), batch_labels)  # 損失を計算
+
+    nabla_fx = torch.autograd.grad(fx, copy_model.parameters(), create_graph=False)
+
+    fx_total += fx.item()
+    if nabla_fx_total is None:
+        nabla_fx_total = [g.clone() for g in nabla_fx]
+    else:
+        for i in range(len(nabla_fx_total)):
+            nabla_fx_total[i] += nabla_fx[i]
+
+    del copy_model  # 不要な変数を削除してメモリを解放
+    torch.cuda.empty_cache()  # メモリを解放
+
+    fx_total /= len(dataloader)
+    for i in range(len(nabla_fx_total)):
+        nabla_fx_total[i] /= len(dataloader)
+
+    # Wolfe条件を満たす学習率を探索
+    max_iters = 40  # 最大で40回の反復を行う
+    omega = 0.75  # 学習率の縮小係数
+    wolfe_satisfied = False
+
+    def compute_total_loss_and_grad(_model):
+        _fx = 0.0
+        _grads_accum = None
+        for b_images, b_labels in dataloader:
+            l = loss_fn(_model(b_images), b_labels)
+            _fx += l.item()
+            g_ = torch.autograd.grad(l, _model.parameters(), create_graph=False)
+            if _grads_accum is None:
+                _grads_accum = [gg.clone() for gg in g_]
+            else:
+                for i in range(len(_grads_accum)):
+                    _grads_accum[i] += g_[i]
+        _fx /= len(dataloader)
+        for i in range(len(_grads_accum)):
+            _grads_accum[i] /= float(len(dataloader))
+        return _fx, _grads_accum
+
+    # We'll interpret fx_total, nabla_fx_total as the "old" loss and gradient.
+    old_fx = fx_total
+    old_grad = nabla_fx_total
+
+    # We need the dot(grad, step) for the sufficient-decrease condition
+    # The "direction" is typically -grad, so dot(grad, direction) = -||grad||^2
+    # but user code attempts to do something like dot(nabla_fx_total[i], updated_params) ...
+    # We'll keep a minimal fix and rely on the existing logic.
+
+    # Precompute grad dot grad (we'll need it for the curvature condition)
+    old_grad_normdot = sum([torch.sum(g_i * g_i).item() for g_i in old_grad])
+
+    for _ in range(max_iters):
+        # -------------------------------------------------
+        # (a) Create a temp copy of the original model and do a step: p -= alpha*g
+        # -------------------------------------------------
+        copy_model_temp = copy.deepcopy(model)
+        with torch.no_grad():
+            for p, g in zip(copy_model_temp.parameters(), old_grad):
+                p.sub_(alpha * g)  # p.data -= alpha*g
+
+        # -------------------------------------------------
+        # (b) Compute new loss
+        # -------------------------------------------------
+        fx_new_total = 0.0
+        for batch_images, batch_labels in dataloader:
+            fx_new = loss_fn(copy_model_temp(batch_images), batch_labels)
+            fx_new_total += fx_new.item()
+        fx_new_total /= len(dataloader)
+
+        # -------------------------------------------------
+        # (c) Check "sufficient decrease" (Armijo) condition:
+        #     fx_new <= fx - c1 * alpha * dot(grad, direction)
+        # By default direction = -grad, so dot(grad, direction) = -||grad||^2
+        # The user code tries to do sum(torch.dot(g.view(-1), p.view(-1))).
+        # We'll replicate it closely but in a safer way:
+        # NOTE: A simpler approach:
+        #   direction_dot_grad = sum( (g*g).sum() ) (with a minus sign if needed)
+        #   but let's preserve the original logic as much as possible.
+        # -------------------------------------------------
+        direction_dot_grad = 0.0
+        # The direction is "delta_p = -alpha*g" from original p to new p
+        # But the user code does: sum(torch.dot(g.view(-1), p.view(-1))).
+        # That is not typical for standard line-search, but let's keep it.
+        with torch.no_grad():
+            copy_model_params = list(copy_model_temp.parameters())
+            for g_i, p_i in zip(old_grad, copy_model_params):
+                direction_dot_grad += torch.dot(g_i.view(-1), p_i.view(-1)).item()
+
+        # The "old_fx - c1 * alpha * <g,d>" part
+        # If direction is -g, <g,d> = -||g||^2. But user wants the dot with new p's ...
+        # We'll preserve their formula:
+        lhs = fx_new_total
+        rhs = old_fx - c1 * alpha * direction_dot_grad
+
+        sufficient_decrease = lhs <= rhs
+
+        if sufficient_decrease:
+            # -------------------------------------------------
+            # (d) Check curvature condition:
+            #     dot(nabla_fx_new, old_grad) >= c2 * dot(old_grad, old_grad)
+            # -------------------------------------------------
+            # We need the new gradient at the new model
+            fx_temp, nabla_fx_new_total = compute_total_loss_and_grad(copy_model_temp)
+
+            curvature_condition = True
+            for i in range(len(nabla_fx_new_total)):
+                lhs_curv = torch.dot(
+                    nabla_fx_new_total[i].view(-1), old_grad[i].view(-1)
+                )
+                rhs_curv = c2 * torch.dot(old_grad[i].view(-1), old_grad[i].view(-1))
+                if lhs_curv.item() < rhs_curv.item():
+                    curvature_condition = False
+                    break
+
+            if curvature_condition:
+                wolfe_satisfied = True
+                # Done with line search
+                del copy_model_temp
+                torch.cuda.empty_cache()
+                break
+
+        # If we get here, Wolfe not satisfied -> reduce alpha
+        alpha *= omega
+
+        # Clean up each iteration
+        del copy_model_temp
+        torch.cuda.empty_cache()
+
+    if not wolfe_satisfied:
+        print("NO WOLFE CONDITION SATISFIED. USING ALPHA=0.01")
+        alpha = 0.01
+
+    return alpha
 
 
 def run_step(
@@ -26,7 +235,7 @@ def run_step(
 ):
 
     epoch_loss, total_preds, correct_preds = 0, 0, 0
-
+    cos_sim, ave_cos = 0, 0
     if pretraining_phase:
         train_loader = kettle.pretrainloader
         valid_loader = kettle.validloader
@@ -37,7 +246,7 @@ def run_step(
         else:
             train_loader = kettle.trainloader
         valid_loader = kettle.validloader
-
+    current_lr = optimizer.param_groups[0]["lr"]
     if "adversarial-cycler" in defs.novel_defense["type"]:
         attackers = []
         for attack in ["wb", "fc", "patch", "htbd", "watermark"]:
@@ -363,6 +572,22 @@ def run_step(
                         )
                     for param in differentiable_params:
                         param.grad += generator.sample(param.shape)
+        if (
+            (epoch >= kettle.args.linesearch_epoch)
+            and kettle.args.wolfe
+            and poison_delta is not None
+        ):
+            alpha = renewal_wolfecondition_stepsize(
+                kettle,
+                kettle.args,
+                model,
+                loss_fn,
+                current_lr * 2,
+                kettle.source_trainset,
+                kettle.setup,
+            )
+            optimizer.param_groups[0]["lr"] = alpha
+            current_lr = alpha
 
         optimizer.step()
 
@@ -373,6 +598,10 @@ def run_step(
     if defs.scheduler == "linear":
         scheduler.step()
 
+    if kettle.args.wandb:
+        ave_cos += check_cosine_similarity(
+            kettle, model, criterion, inputs, labels, current_lr
+        )
     if epoch % defs.validate == 0 or epoch == (defs.epochs - 1):
         predictions, valid_loss = run_validation(
             model,
@@ -416,6 +645,7 @@ def run_step(
 
     current_lr = optimizer.param_groups[0]["lr"]
     print_and_save_stats(
+        kettle,
         epoch,
         stats,
         current_lr,
@@ -427,6 +657,7 @@ def run_step(
         source_loss,
         source_clean_acc,
         source_clean_loss,
+        cos_sim,
     )
 
 

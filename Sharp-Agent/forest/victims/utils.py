@@ -1,7 +1,11 @@
 """Utilites related to training models."""
 
+import torch
+import wandb
+
 
 def print_and_save_stats(
+    kettle,
     epoch,
     stats,
     current_lr,
@@ -13,10 +17,12 @@ def print_and_save_stats(
     source_loss,
     source_clean_acc,
     source_clean_loss,
+    cos_sim=None,
 ):
     """Print info into console and into the stats object."""
     stats["train_losses"].append(train_loss)
     stats["train_accs"].append(train_acc)
+    stats["learning_rates"].append(current_lr)
 
     if predictions is not None:
         stats["valid_accs"].append(predictions["all"]["avg"])
@@ -25,7 +31,7 @@ def print_and_save_stats(
         stats["valid_losses"].append(valid_loss)
 
         print(
-            f"Epoch: {epoch:<3}| lr: {current_lr:.4f} | "
+            f"Epoch: {epoch:<3}| lr: {current_lr:.8f} | "
             f'Training    loss is {stats["train_losses"][-1]:7.4f}, train acc: {stats["train_accs"][-1]:7.2%} | '
             f'Validation   loss is {stats["valid_losses"][-1]:7.4f}, valid acc: {stats["valid_accs"][-1]:7.2%} | '
         )
@@ -35,7 +41,7 @@ def print_and_save_stats(
         stats["source_accs_clean"].append(source_clean_acc)
         stats["source_losses_clean"].append(source_clean_loss)
         print(
-            f"Epoch: {epoch:<3}| lr: {current_lr:.4f} | "
+            f"Epoch: {epoch:<3}| lr: {current_lr:.8f} | "
             f"Source adv. loss is {source_loss:7.4f}, fool  acc: {source_acc:7.2%} | "
             f"Source orig. loss is {source_clean_loss:7.4f}, orig. acc: {source_clean_acc:7.2%} | "
         )
@@ -53,6 +59,18 @@ def print_and_save_stats(
             stats["source_losses_clean"].append(stats["source_losses_clean"][-1])
 
         print(
-            f"Epoch: {epoch:<3}| lr: {current_lr:.4f} | "
+            f"Epoch: {epoch:<3}| lr: {current_lr:.8f} | "
             f'Training    loss is {stats["train_losses"][-1]:7.4f}, train acc: {stats["train_accs"][-1]:7.2%} | '
+        )
+    if cos_sim is not None:
+        stats["cos_sim"].append(cos_sim)
+
+    if kettle.args.wandb:
+        wandb.log(
+            {
+                "train_acc": train_acc,
+                "valid_acc": stats["valid_accs"][-1],
+                "target_acc": source_acc,
+                "average_cosine_similarity": cos_sim,
+            }
         )

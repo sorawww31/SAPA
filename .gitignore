@@ -4,3 +4,4 @@
 *.csv
 *.sh
 datasets/
+wandb/

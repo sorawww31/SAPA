@@ -188,6 +188,8 @@ def record_results(
         ensemble=args.ensemble,
         sources_train=args.sources_train,
         sources_test=args.sources,
+        wolfe_c2=args.wolfe[0] if args.wolfe is not None else "",
+        wolfe_c1=args.wolfe[1] if args.wolfe is not None else "",
         source_loss_reinit=_maybe(stats_results, "source_losses"),
         attack_success_rate=_maybe(stats_results, "source_accs"),
         load_feature_repr=args.load_feature_repr,

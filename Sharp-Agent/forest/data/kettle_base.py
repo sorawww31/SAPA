@@ -640,6 +640,8 @@ class _Kettle:
                     for grad in gradients:
                         grad_norm += grad.detach().pow(2).sum()
                     grad_norms.append(grad_norm.sqrt())
+                    if self.args.dryrun:
+                        break
             # ensemble models
             else:
                 grad_norms_list = [[] for _ in range(len(victim.models))]
@@ -659,7 +661,8 @@ class _Kettle:
                             for grad in gradients:
                                 grad_norm += grad.detach().pow(2).sum()
                             grad_norms_list[i].append(grad_norm.sqrt())
-
+                            if self.args.dryrun:
+                                break
                 print(
                     f"Taking average gradient norm of ensebmle of {len(victim.models)} models"
                 )

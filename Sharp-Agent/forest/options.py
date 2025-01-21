@@ -506,5 +506,30 @@ def options():
     parser.add_argument(
         "--sharpsigma", default=0.05, type=float, help="variance for sharpness"
     )
-
+    parser.add_argument(
+        "--wandb",
+        action="store_true",
+        default=False,
+        help="Use wandb for logging",
+    )
+    # wolfe
+    parser.add_argument(
+        "--wolfe",
+        type=float,
+        nargs=2,
+        default=None,
+        help="Wolfe conditions for line search c2 = wolfe[0], c1 = wolfe[1]",
+    )
+    parser.add_argument(
+        "--linesearch_epoch",
+        type=int,
+        default=20,
+        help="Number of epoch for line search",
+    )
+    parser.add_argument(
+        "--wolfe_batch",
+        type=int,
+        default=256,
+        help="Batch size for line search",
+    )
     return parser

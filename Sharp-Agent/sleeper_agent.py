@@ -1,9 +1,12 @@
 """General interface script to launch poisoning jobs."""
 
 import datetime
+import os
 import time
 
+import pytz
 import torch
+import wandb
 
 import forest
 from forest.filtering_defenses import get_defense
@@ -20,6 +23,15 @@ if args.deterministic:
 
 if __name__ == "__main__":
 
+    if args.wandb:
+        os.environ["WANDB_API_KEY"] = "b89e9995f493fd65200bf57ec07b503531990699"
+        print("Logging to wandb...")
+        jst = datetime.datetime.now(pytz.timezone("Asia/Tokyo"))  # JSTの現在時刻を取得
+        wandb.init(
+            project=args.name,
+            name=f"{args.name}_{args.poisonkey}_{jst.strftime('%Y-%m-%d')}",
+        )
+        wandb.config.conservative = f"{args.name}"
     setup = forest.utils.system_startup(args)
 
     model = forest.Victim(args, setup=setup)
@@ -126,7 +138,8 @@ if __name__ == "__main__":
         model.model_init_seed,
         extra_stats={**filter_stats, **timestamps},
     )
-
+    if args.wandb:
+        wandb.finish()
     # Export
     # if args.save is not None:
     #     data.export_poison(poison_delta, path=args.poison_path, mode=args.save)
